@@ -19,3 +19,7 @@ async def receive_color(data: str = Form(...)):
 @app.get("/metrics")
 async def metrics():
     return "toto"
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "fastapi"}
