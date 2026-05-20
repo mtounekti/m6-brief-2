@@ -8,7 +8,7 @@
 Mise en place d'une stack de monitoring complète pour superviser
 la solution IA FastIA en production :
 - **Prometheus** collecte les métriques de l'API et du système
-- **Node Exporter** expose les métriques système (CPU, RAM, disk)
+- **Node Exporter** expose les métriques système
 - **Grafana** visualise les métriques via le dashboard n°1860
 - **Uptime Kuma** vérifie la disponibilité de l'API toutes les 60s
 - **Discord Webhook** envoie des alertes en cas d'indisponibilité
@@ -132,7 +132,7 @@ scrape_configs:
 > Affiche : CPU usage, RAM, disk I/O, network — métriques système en temps réel
 
 ### Capture du dashboard
-> *Ajouter ici une capture du dashboard Grafana 1860 avec les métriques système*
+<img width="1891" height="983" alt="Capture d’écran 2026-05-20 à 12 28 36" src="https://github.com/user-attachments/assets/6d181eb8-7636-45d5-8d0d-0436dc55538c" />
 
 ---
 
@@ -146,11 +146,11 @@ scrape_configs:
 - **Notification** : Discord Webhook
 
 ### Capture Uptime Kuma
->  *capture*
+<img width="1891" height="914" alt="Capture d’écran 2026-05-20 à 12 18 39" src="https://github.com/user-attachments/assets/52f4a04f-a92c-4091-971d-8fe988734428" />
 
 ---
 
-## 🔔 Discord Webhook – Alertes automatiques
+## Discord Webhook – Alertes automatiques
 
 ### Configuration dans Uptime Kuma
 
@@ -168,7 +168,7 @@ scrape_configs:
 | API **DOWN** | 🔴 FastIA API est hors ligne |
 
 ### Capture Discord
-> *Ajouter ici une capture des alertes Discord (UP/DOWN)*
+<img width="728" height="419" alt="Capture d’écran 2026-05-20 à 12 29 31" src="https://github.com/user-attachments/assets/c1d53fb1-b0ed-4c00-bde3-45948eb4f8ca" />
 
 ---
 
@@ -186,7 +186,6 @@ docker start fastia-m5-brief3-monitoring-api-1
 # Attendre ~60s => alerte Discord "API est UP"
 ```
 
-
 ---
 
-*Brief M5 – Monitoring MLOps | FastIA 2025*
+*Brief3 M5 – Monitoring MLOps*
