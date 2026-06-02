@@ -1,31 +1,54 @@
-from loguru import logger
-import streamlit as st
-import requests
+import io
 import os
-from streamlit_drawable_canvas import st_canvas
-from PIL import Image
+
 import numpy as np
+import requests
+import streamlit as st
+from loguru import logger
+from PIL import Image
+from streamlit_drawable_canvas import st_canvas
+
+
+API_URL = os.getenv("API_URL", "http://localhost:8080").rstrip("/")
+LOG_DIR = os.getenv("LOG_DIR", "/logs")
+LOG_FILE = os.path.join(LOG_DIR, "app.log")
+
+
+@st.cache_resource
+def configure_logger():
+    logger.add(LOG_FILE, rotation="10 MB", retention="7 days", level="INFO")
+
+    return logger
+
 
 def preprocess_canvas_image(image_data: np.ndarray):
-    image = Image.fromarray(image_data.astype("uint8"), mode="RGBA").convert("L")
+    image = Image.fromarray(image_data.astype("uint8"),
+                            mode="RGBA").convert("L")
     image = image.resize((28, 28))
-    
-    pixels = np.array(image).astype("float32") / 255.0
-    
-    return pixels.tolist(), image
 
-def request_predication(image_payload: list[list[float]]):
-    response = requests.post(f"{api_url}/predict", json={"image": image_payload}, timeout=10)
+    return image
+
+
+def request_prediction(image: Image.Image):
+    image_bytes = io.BytesIO()
+    image.save(image_bytes, format="PNG")
+    image_bytes.seek(0)
+
+    response = requests.post(f"{API_URL}/predict", files={"file": (
+        "digit.png", image_bytes.getvalue(), "image/png")}, timeout=10)
 
     response.raise_for_status()
     return response.json()
 
-# Récupération de l'URL de l'API depuis les variables d'environnement
-api_url = f"http://api:{os.getenv('FASTAPI_PORT', '8080')}"
-log_file = "logs/app.log"
 
-# Configuration de Loguru pour sauvegarder les logs
-logger.add(log_file, rotation="10 MB", retention="7 days", level="INFO")
+def request_correction(prediction: int, correction: int):
+    response = requests.post(
+        f"{API_URL}/correct", data={"prediction": prediction, "correction": correction}, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+configure_logger()
 
 st.set_page_config(
     page_title="MNIST Classifier",
@@ -53,31 +76,68 @@ if st.button("Prédire", type="primary"):
         st.warning("Dessine un chiffre avant de lancer la prédiction.")
         st.stop()
 
-    image_payload, image = preprocess_canvas_image(canvas_result.image_data)
+    image = preprocess_canvas_image(canvas_result.image_data)
 
-    st.image(image, caption="Image envoyée au modèle, format MNIST (28x28 pixels)", width=140)
+    st.image(
+        image, caption="Image envoyée au modèle, format MNIST (28x28 pixels)", width=140)
 
     try:
         logger.info("Sending MNIST image to API for prediction...")
-        response = request_predication(image_payload)
+        response = request_prediction(image)
 
-        predication = response.get("prediction")
+        prediction = response.get("prediction")
         confidence = response.get("confidence")
 
-        if predication is None:
-            st.error("La résponse de l'API est invalide elle ne contient pas de prédiction.")
+        if prediction is None:
+            st.error(
+                "La résponse de l'API est invalide elle ne contient pas de prédiction.")
             logger.error("Invalid response from API: no prediction")
             st.stop()
-        
-        st.success(f"Chiffre prédit: {predication}")
+
+        st.session_state["prediction"] = prediction
+        st.session_state["confidence"] = confidence
+
+        st.success(f"Chiffre prédit: {prediction}")
 
         if confidence is not None:
             st.write(f"Confiance: {confidence}")
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API connection error: {e}")
-        st.error(f"Erreur lors de la connexion à l'API: {e}")
-    
+
     except requests.exceptions.Timeout:
         logger.error("API request timed out")
         st.error("La requête à l'API a pris trop de temps pour répondre.")
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API connection error: {e}")
+        st.error(f"Erreur lors de la connexion à l'API: {e}")
+
+if "prediction" in st.session_state:
+    st.divider()
+    st.subheader("Correction")
+
+    st.write(f"Chiffre prédit: {st.session_state['prediction']}")
+    st.write(f"Confiance: {st.session_state['confidence']}")
+
+    is_correct = st.radio(
+        "Est-ce que la prédiction est correcte ?", ["Oui", "Non"], horizontal=True)
+
+    if is_correct == "Non":
+        correction = st.selectbox(
+            "Quel était le bon chiffre ?", list(range(10)))
+
+        if st.button("Envoyer la correction"):
+            try:
+                response = request_correction(
+                    st.session_state["prediction"], correction)
+                logger.info(
+                    f"Correction sent: prediction={st.session_state['prediction']}, correction={correction}")
+
+                st.success(response.get("message"))
+
+            except requests.exceptions.Timeout:
+                logger.error("API request timed out")
+                st.error("La requête à l'API a pris trop de temps pour répondre.")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API connection error: {e}")
+                st.error(f"Erreur lors de la connexion à l'API: {e}")
+    else:
+        st.info("Aucune correction nécessaire.")
