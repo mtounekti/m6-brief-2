@@ -1,2 +1,7 @@
-.venv
 /logs
+.env
+.venv/
+__pycache__/
+*.pyc
+data/corrections.db
+models/

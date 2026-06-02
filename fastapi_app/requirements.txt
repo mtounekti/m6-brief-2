@@ -1,7 +1,8 @@
 fastapi
 uvicorn
-pydantic
+tensorflow
+pillow
+numpy
 prometheus-client
-python-multipart
 loguru
-psutil
+python-multipart
