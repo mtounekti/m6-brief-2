@@ -43,20 +43,20 @@ prediction_latency = Histogram("prediction_latency_seconds", "Latence des prédi
 
 app = FastAPI()
 
-@app.get("/")
+@app.get("/", summary="Racine", description="Vérifie que l'API est en ligne.")
 async def root():
     return {"message": "FastIA MNIST API"}
 
-@app.get("/health")
+@app.get("/health", summary="Santé", description="Retourne le statut de l'API, utilisé par Uptime Kuma.")
 async def health():
     return {"status": "ok", "service": "fastapi"}
 
-@app.get("/metrics")
+@app.get("/metrics", summary="Métriques Prometheus", description="Expose les métriques de l'API au format Prometheus.")
 async def metrics():
     # endpoint scrappé par Prometheus
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-@app.post("/predict")
+@app.post("/predict", summary="Prédiction", description="Reçoit une image PNG d'un chiffre manuscrit et retourne la classe prédite (0-9) ainsi que le score de confiance.")
 async def predict(file: UploadFile = File(...)):
     # lire et préparer l'image reçue depuis Streamlit
     contents = await file.read()
@@ -74,7 +74,7 @@ async def predict(file: UploadFile = File(...)):
 
     return {"prediction": predicted_class, "confidence": round(confidence, 2)}
 
-@app.post("/correct")
+@app.post("/correct", summary="Correction", description="Reçoit la prédiction originale et la correction de l'utilisateur, les stocke en base SQLite pour le réentraînement.")
 async def correct(prediction: int = Form(...), correction: int = Form(...)):
     # stockage de la correction en SQLite
     conn = sqlite3.connect(DB_PATH)

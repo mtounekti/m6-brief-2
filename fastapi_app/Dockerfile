@@ -12,10 +12,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# copie du modèle et des données
 COPY . .
-COPY ../models /app/models
-COPY ../data /app/data
 
 EXPOSE 8080
 
