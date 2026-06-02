@@ -59,4 +59,25 @@ if st.button("Prédire", type="primary"):
 
     try:
         logger.info("Sending MNIST image to API for prediction...")
-        prediction = request_predication(image_payload)
+        response = request_predication(image_payload)
+
+        predication = response.get("prediction")
+        confidence = response.get("confidence")
+
+        if predication is None:
+            st.error("La résponse de l'API est invalide elle ne contient pas de prédiction.")
+            logger.error("Invalid response from API: no prediction")
+            st.stop()
+        
+        st.success(f"Chiffre prédit: {predication}")
+
+        if confidence is not None:
+            st.write(f"Confiance: {confidence}")
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API connection error: {e}")
+        st.error(f"Erreur lors de la connexion à l'API: {e}")
+    
+    except requests.exceptions.Timeout:
+        logger.error("API request timed out")
+        st.error("La requête à l'API a pris trop de temps pour répondre.")
