@@ -7,15 +7,17 @@ import streamlit as st
 from loguru import logger
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
+from pathlib import Path
 
-
+PROJECT_ROOT = Path(__file__).parents[1]
 API_URL = os.getenv("API_URL", "http://localhost:8080").rstrip("/")
-LOG_DIR = os.getenv("LOG_DIR", "/logs")
-LOG_FILE = os.path.join(LOG_DIR, "app.log")
+LOG_DIR = PROJECT_ROOT / "logs"
+LOG_FILE = LOG_DIR / "app.log"
 
 
 @st.cache_resource
 def configure_logger():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger.add(LOG_FILE, rotation="10 MB", retention="7 days", level="INFO")
 
     return logger
@@ -48,6 +50,14 @@ def request_correction(prediction: int, correction: int):
     return response.json()
 
 
+def canvas_has_drawing(image_data: np.ndarray) -> bool:
+    if image_data is None:
+        return False
+    rgb_pixels = image_data[:, :, :3]
+    white_pixels = np.sum(np.any(rgb_pixels > 30, axis=2))
+    return white_pixels > 20
+
+
 configure_logger()
 
 st.set_page_config(
@@ -71,8 +81,15 @@ canvas_result = st_canvas(
     key="mnist_canvas",
 )
 
+has_drawing = canvas_has_drawing(canvas_result.image_data)
+
+if not has_drawing:
+    st.session_state.pop("prediction", None)
+    st.session_state.pop("confidence", None)
+
+
 if st.button("Prédire", type="primary"):
-    if canvas_result.image_data is None:
+    if not has_drawing:
         st.warning("Dessine un chiffre avant de lancer la prédiction.")
         st.stop()
 
@@ -100,7 +117,7 @@ if st.button("Prédire", type="primary"):
         st.success(f"Chiffre prédit: {prediction}")
 
         if confidence is not None:
-            st.write(f"Confiance: {confidence}")
+            st.write(f"Confiance: {confidence:.0%}")
 
     except requests.exceptions.Timeout:
         logger.error("API request timed out")
@@ -115,7 +132,10 @@ if "prediction" in st.session_state:
     st.subheader("Correction")
 
     st.write(f"Chiffre prédit: {st.session_state['prediction']}")
-    st.write(f"Confiance: {st.session_state['confidence']}")
+
+    confidence = st.session_state.get("confidence")
+    if confidence is not None:
+        st.write(f"Confiance: {confidence:.0%}")
 
     is_correct = st.radio(
         "Est-ce que la prédiction est correcte ?", ["Oui", "Non"], horizontal=True)
@@ -131,7 +151,7 @@ if "prediction" in st.session_state:
                 logger.info(
                     f"Correction sent: prediction={st.session_state['prediction']}, correction={correction}")
 
-                st.success(response.get("message"))
+                st.success(response.get("message", "Correction enregistrée."))
 
             except requests.exceptions.Timeout:
                 logger.error("API request timed out")
