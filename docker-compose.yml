@@ -113,4 +113,4 @@ volumes:
   grafana_data:
   uptime_kuma_data:
   prefect_data:
-    name: prefect_data
+    name: prefect_data_m6_brief2
