@@ -11,6 +11,12 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - app_network
 
@@ -45,13 +51,18 @@ services:
   prefect-worker:
     build: .
     container_name: prefect-worker
+    command: prefect worker start --pool mnist-pool --limit 1
     depends_on:
       prefect-server:
+        condition: service_healthy
+      api:
         condition: service_healthy
     environment:
       - PREFECT_API_URL=http://prefect-server:4200/api
       - PYTHONIOENCODING=utf-8
       - DB_PATH=data/corrections.db
+      - API_URL=http://api:8080
+      - RETRAIN_THRESHOLD=5
     volumes:
       - ./data:/app/data
     networks:

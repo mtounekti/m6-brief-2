@@ -1,0 +1,11 @@
+name: m6-brief-2
+prefect-version: "3"
+deployments:
+  - name: mnist-retraining
+    entrypoint: flow.py:mnist_retraining_flow
+    work_pool:
+      name: mnist-pool
+      work_queue_name: default
+    schedules:
+      - cron: "*/15 * * * *"
+    pull: []

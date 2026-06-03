@@ -43,9 +43,18 @@ def request_prediction(image: Image.Image):
     return response.json()
 
 
-def request_correction(prediction: int, correction: int):
+# Envoie le feedback avec l'image corrigée.
+def request_correction(prediction: int, correction: int, image: Image.Image):
+    image_bytes = io.BytesIO()
+    image.save(image_bytes, format="PNG")
+    image_bytes.seek(0)
+
     response = requests.post(
-        f"{API_URL}/correct", data={"prediction": prediction, "correction": correction}, timeout=10)
+        f"{API_URL}/correct",
+        data={"prediction": prediction, "correction": correction},
+        files={"file": ("corrected_digit.png", image_bytes.getvalue(), "image/png")},
+        timeout=10,
+    )
     response.raise_for_status()
     return response.json()
 
@@ -83,9 +92,11 @@ canvas_result = st_canvas(
 
 has_drawing = canvas_has_drawing(canvas_result.image_data)
 
+# Oublie la prédiction quand le canvas est vide.
 if not has_drawing:
     st.session_state.pop("prediction", None)
     st.session_state.pop("confidence", None)
+    st.session_state.pop("last_image", None)
 
 
 if st.button("Prédire", type="primary"):
@@ -113,6 +124,8 @@ if st.button("Prédire", type="primary"):
 
         st.session_state["prediction"] = prediction
         st.session_state["confidence"] = confidence
+        # Garde l'image liée à la correction utilisateur.
+        st.session_state["last_image"] = image
 
         st.success(f"Chiffre prédit: {prediction}")
 
@@ -147,7 +160,10 @@ if "prediction" in st.session_state:
         if st.button("Envoyer la correction"):
             try:
                 response = request_correction(
-                    st.session_state["prediction"], correction)
+                    st.session_state["prediction"],
+                    correction,
+                    st.session_state["last_image"],
+                )
                 logger.info(
                     f"Correction sent: prediction={st.session_state['prediction']}, correction={correction}")
 
