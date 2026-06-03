@@ -9,7 +9,7 @@ from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parents[1]
+PROJECT_ROOT = Path(__file__).parent
 API_URL = os.getenv("API_URL", "http://localhost:8080").rstrip("/")
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILE = LOG_DIR / "app.log"
