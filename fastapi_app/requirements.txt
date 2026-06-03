@@ -6,3 +6,4 @@ numpy
 prometheus-client
 loguru
 python-multipart
+optuna
