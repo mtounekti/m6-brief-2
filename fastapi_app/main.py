@@ -202,7 +202,7 @@ def train_and_evaluate(trial_model, X_train, y_train, X_val, y_val):
     trial_model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        epochs=20,
+        epochs=10, # mettre 10 au lieu de 20 pour une démo plus rapide
         batch_size=64,
         callbacks=[early_stop],
         verbose=0
@@ -273,7 +273,7 @@ async def retrain():
         return train_and_evaluate(trial_model, X_train, y_train_cat, X_test, y_test_cat)
 
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=2) # mettre 1 pour une démo plus rapide si besoin 
+    study.optimize(objective, n_trials=1) # mettre 1 pour une démo plus rapide si besoin 
     best_params = study.best_params
     logger.info(f"[RETRAIN] Meilleurs paramètres Optuna : {best_params}")
 
