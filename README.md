@@ -1,6 +1,6 @@
 # M6 - Brief 2 - Test, feedback et réentraînement dynamique sur MNIST
 
-Application complète de classification de chiffres manuscrits avec boucle de feedback utilisateur
+Application complète de classification de chiffres manuscrits avec boucle de feedback utilisateur.
 
 ## Structure du projet
 
@@ -32,6 +32,48 @@ m6-brief-2/
 └── README.md
 ```
 
+## Architecture de la boucle de feedback
+
+```
+┌─────────────┐     image      ┌─────────────┐
+│  Streamlit  │ ────────────▶  │   FastAPI   │
+│  (canvas)   │ ◀────────────  │  /predict   │
+└─────────────┘   prédiction   └─────────────┘
+       │                              │
+  correction                    stockage
+   utilisateur                  SQLite
+       │                              │
+       ▼                              ▼
+┌─────────────┐              ┌─────────────────┐
+│   FastAPI   │              │     data/       │
+│  /correct   │ ──────────▶  │ corrections.db  │
+└─────────────┘              └─────────────────┘
+                                      │
+                               toutes les 15 min
+                                      │
+                                      ▼
+                             ┌─────────────────┐
+                             │     Prefect     │
+                             │  analyse seuil  │
+                             └─────────────────┘
+                                      │
+                              si >= 5 corrections
+                                      │
+                                      ▼
+                             ┌─────────────────┐
+                             │    FastAPI      │
+                             │    /retrain     │
+                             │  + Optuna       │
+                             └─────────────────┘
+                                      │
+                                      ▼
+                             ┌─────────────────┐
+                             │  cnn_mnist      │
+                             │  .keras mis     │
+                             │  à jour         │
+                             └─────────────────┘
+```
+
 ## Lancement
 
 ```bash
@@ -47,7 +89,7 @@ docker exec -it prefect-worker prefect work-pool create mnist-pool --type proces
 docker exec -it prefect-worker prefect deploy --all
 ```
 
-Le flow s'exécute toutes les 15 minutes et déclenche un réentraînement si le seuil de corrections est atteint
+Le flow s'exécute toutes les 15 minutes et déclenche un réentraînement si le seuil de corrections est atteint.
 
 ## Services
 
@@ -62,9 +104,9 @@ Le flow s'exécute toutes les 15 minutes et déclenche un réentraînement si le
 
 ## Fonctionnement
 
-L'utilisateur dessine un chiffre dans l'interface Streamlit. L'image est envoyée à FastAPI qui retourne une prédiction via le modèle CNN. Si la prédiction est incorrecte, l'utilisateur peut la corriger avec l'image associée. La correction est stockée en base SQLite
+L'utilisateur dessine un chiffre dans l'interface Streamlit. L'image est envoyée à FastAPI qui retourne une prédiction via le modèle CNN. Si la prédiction est incorrecte, l'utilisateur peut la corriger avec l'image associée. La correction est stockée en base SQLite.
 
-Toutes les 15 minutes, Prefect analyse les nouvelles corrections. Si le seuil de 5 corrections est atteint, un réentraînement est déclenché automatiquement via la route `/retrain`. Le modèle est optimisé avec Optuna et sauvegardé
+Toutes les 15 minutes, Prefect analyse les nouvelles corrections. Si le seuil de 5 corrections est atteint, un réentraînement est déclenché automatiquement via la route `/retrain`. Le modèle est optimisé avec Optuna et sauvegardé.
 
 ## Variables d'environnement
 
