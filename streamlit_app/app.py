@@ -177,3 +177,20 @@ if "prediction" in st.session_state:
                 st.error(f"Erreur lors de la connexion à l'API: {e}")
     else:
         st.info("Aucune correction nécessaire.")
+
+st.divider()
+st.subheader("Historique des corrections supprimées")
+
+if st.button("Charger l'historique"):
+    try:
+        response = requests.get(f"{API_URL}/errors", timeout=10)
+        response.raise_for_status()
+        errors = response.json().get("errors", [])
+
+        if not errors:
+            st.info("Aucune correction supprimée pour l'instant.")
+        else:
+            st.dataframe(errors)
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"Erreur lors de la connexion à l'API: {e}")
