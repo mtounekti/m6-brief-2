@@ -241,3 +241,15 @@ async def retrain():
         "accuracy_after": round(accuracy_after, 4),
         "corrections_used": len(corrections)
     }
+
+@app.get("/corrections", summary="Corrections", description="Retourne les corrections enregistrées.")
+async def get_corrections():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, prediction, correction, timestamp FROM corrections ORDER BY timestamp DESC LIMIT 100")
+    rows = cursor.fetchall()
+    conn.close()
+    return {"corrections": [
+        {"id": r[0], "prediction": r[1], "correction": r[2], "timestamp": r[3]}
+        for r in rows
+    ]}

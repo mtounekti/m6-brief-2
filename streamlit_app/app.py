@@ -178,6 +178,7 @@ if "prediction" in st.session_state:
     else:
         st.info("Aucune correction nécessaire.")
 
+#errors enregistrées
 st.divider()
 st.subheader("Historique des corrections supprimées")
 
@@ -191,6 +192,24 @@ if st.button("Charger l'historique"):
             st.info("Aucune correction supprimée pour l'instant.")
         else:
             st.dataframe(errors)
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"Erreur lors de la connexion à l'API: {e}")
+
+# Corrections enregistrées
+st.divider()
+st.subheader("Corrections enregistrées")
+
+if st.button("Charger les corrections"):
+    try:
+        response = requests.get(f"{API_URL}/corrections", timeout=10)
+        response.raise_for_status()
+        corrections = response.json().get("corrections", [])
+
+        if not corrections:
+            st.info("Aucune correction enregistrée pour l'instant.")
+        else:
+            st.dataframe(corrections)
 
     except requests.exceptions.RequestException as e:
         st.error(f"Erreur lors de la connexion à l'API: {e}")
