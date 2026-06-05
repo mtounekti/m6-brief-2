@@ -31,6 +31,37 @@ def init_flow_state(db_path: str):
     conn.close()
 
 
+# Nettoie les corrections incohérentes ou corrompues.
+@task
+def clean_corrections(db_path: str) -> int:
+    conn = sqlite3.connect(db_path, timeout=30)
+    cursor = conn.cursor()
+
+    # Supprime les corrections sans image
+    cursor.execute("DELETE FROM corrections WHERE image IS NULL")
+    deleted_null = cursor.rowcount
+
+    # Supprime les doublons (même prediction, correction, timestamp)
+    cursor.execute("""
+        DELETE FROM corrections
+        WHERE id NOT IN (
+            SELECT MIN(id)
+            FROM corrections
+            GROUP BY prediction, correction, timestamp
+        )
+    """)
+    deleted_duplicates = cursor.rowcount
+
+    # Supprime les corrections incohérentes (prediction == correction)
+    cursor.execute("DELETE FROM corrections WHERE prediction = correction")
+    deleted_incoherent = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return deleted_null + deleted_duplicates + deleted_incoherent
+
+
 # Récupère le dernier feedback déjà traité.
 @task
 def get_last_processed_id(db_path: str):
@@ -146,6 +177,10 @@ def mnist_retraining_flow() -> None:
     logger.info(f"Retraining threshold: {RETRAIN_THRESHOLD}")
 
     init_flow_state(DB_PATH)
+
+    # Nettoyage des données avant analyse
+    deleted = clean_corrections(DB_PATH)
+    logger.info(f"Corrections nettoyées : {deleted}")
 
     last_processed_id = get_last_processed_id(DB_PATH)
     stats = get_new_correction_stats(DB_PATH, last_processed_id)
