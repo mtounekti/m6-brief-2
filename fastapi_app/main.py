@@ -51,6 +51,18 @@ def init_db():
     if "image" not in columns:
         cursor.execute("ALTER TABLE corrections ADD COLUMN image BLOB")
 
+    # Table d'historique des corrections supprimées lors du nettoyage
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS error_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            correction_id INTEGER,
+            prediction INTEGER,
+            correction INTEGER,
+            reason TEXT,
+            timestamp TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -82,6 +94,19 @@ async def health():
 async def metrics():
     # endpoint scrappé par Prometheus
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/errors", summary="Historique des erreurs", description="Retourne l'historique des corrections supprimées lors du nettoyage.")
+async def get_errors():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM error_log ORDER BY timestamp DESC LIMIT 100")
+    rows = cursor.fetchall()
+    conn.close()
+    return {"errors": [
+        {"id": r[0], "correction_id": r[1], "prediction": r[2], "correction": r[3], "reason": r[4], "timestamp": r[5]}
+        for r in rows
+    ]}
 
 
 @app.post("/predict", summary="Prédiction", description="Reçoit une image PNG d'un chiffre manuscrit et retourne la classe prédite (0-9) ainsi que le score de confiance.")
@@ -131,46 +156,6 @@ async def correct(
     return {"message": "Correction enregistrée", "prediction": prediction, "correction": correction}
 
 
-def build_model(lr: float, dropout: float):
-    model = Sequential([
-        Conv2D(32, (3, 3), activation="relu", input_shape=(28, 28, 1)),
-        BatchNormalization(),
-        Conv2D(32, (3, 3), activation="relu"),
-        MaxPooling2D(),
-        Dropout(dropout),
-        Conv2D(64, (3, 3), activation="relu"),
-        BatchNormalization(),
-        Conv2D(64, (3, 3), activation="relu", padding="same"),
-        MaxPooling2D(),
-        Dropout(dropout),
-        Flatten(),
-        Dense(256, activation="relu"),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(10, activation="softmax")
-    ])
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
-        loss="categorical_crossentropy",
-        metrics=["accuracy"]
-    )
-    return model
-
-
-def train_and_evaluate(model, X_train, y_train, X_val, y_val):
-    early_stop = EarlyStopping(patience=3, restore_best_weights=True)
-    model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=20,
-        batch_size=64,
-        callbacks=[early_stop],
-        verbose=0
-    )
-    _, accuracy = model.evaluate(X_val, y_val, verbose=0)
-    return accuracy
-
-
 def load_correction_dataset(corrections):
     # Convertit les images corrigées en tensors MNIST.
     X_corrections = []
@@ -192,81 +177,67 @@ def load_correction_dataset(corrections):
     return np.array(X_corrections), to_categorical(np.array(y_corrections), 10)
 
 
-@app.post("/retrain", summary="Réentraînement", description="Récupère les corrections SQLite, les combine avec MNIST, optimise avec Optuna et réentraîne le CNN.")
+@app.post("/retrain", summary="Fine-tuning", description="Fine-tuning du modèle existant sur les nouvelles corrections utilisateur")
 async def retrain():
-    global model  # en premier, une seule fois
-    logger.info("[RETRAIN] Démarrage du réentraînement")
-
-    # chargement du dataset MNIST
-    (X_train, y_train), (X_test, y_test) = mnist.load_data()
-    X_train = X_train.reshape(-1, 28, 28, 1) / 255.0
-    X_test = X_test.reshape(-1, 28, 28, 1) / 255.0
-    y_train_cat = to_categorical(y_train, 10)
-    y_test_cat = to_categorical(y_test, 10)
+    global model
+    logger.info("[RETRAIN] Démarrage du fine-tuning")
 
     # chargement des corrections depuis SQLite
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT image, correction FROM corrections WHERE image IS NOT NULL")
+    cursor.execute("SELECT image, correction FROM corrections WHERE image IS NOT NULL")
     corrections = cursor.fetchall()
     conn.close()
-    logger.info(
-        f"[RETRAIN] {len(corrections)} corrections exploitables chargées depuis SQLite")
+    logger.info(f"[RETRAIN] {len(corrections)} corrections chargées depuis SQLite")
 
     X_corrections, y_corrections_cat = load_correction_dataset(corrections)
-    if X_corrections is not None:
-        # Surpondère les feedbacks face aux 60k images MNIST.
-        X_corrections = np.repeat(
-            X_corrections, CORRECTION_REPEAT_FACTOR, axis=0)
-        y_corrections_cat = np.repeat(
-            y_corrections_cat, CORRECTION_REPEAT_FACTOR, axis=0)
-        X_train = np.concatenate([X_train, X_corrections])
-        y_train_cat = np.concatenate([y_train_cat, y_corrections_cat])
-        logger.info(
-            f"[RETRAIN] {len(X_corrections)} exemples corrigés injectés")
+    if X_corrections is None:
+        logger.warning("[RETRAIN] Aucune correction exploitable, fine-tuning annulé")
+        return {"message": "Aucune correction exploitable"}
 
-    # score avant réentraînement
+    # chargement du jeu de test MNIST pour évaluation
+    (_, _), (X_test, y_test) = mnist.load_data()
+    X_test = X_test.reshape(-1, 28, 28, 1) / 255.0
+    y_test_cat = to_categorical(y_test, 10)
+
+    # score avant fine-tuning
     _, accuracy_before = model.evaluate(X_test, y_test_cat, verbose=0)
     logger.info(f"[RETRAIN] Accuracy avant : {accuracy_before:.4f}")
 
-    # optim Optuna avec un seul entraînement pour accélérer
-    best_trial_model = None
+    # fine-tuning : on gèle les couches convolutives, on réentraîne seulement les couches denses
+    for layer in model.layers[:-3]:
+        layer.trainable = False
 
-    def objective(trial):
-        nonlocal best_trial_model
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+        loss="categorical_crossentropy",
+        metrics=["accuracy"]
+    )
 
-        lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-        dropout = trial.suggest_float("dropout", 0.1, 0.5)
-        trial_model = build_model(lr=lr, dropout=dropout)
-        accuracy = train_and_evaluate(
-            trial_model,
-            X_train,
-            y_train_cat,
-            X_test,
-            y_test_cat,
-        )
+    early_stop = EarlyStopping(patience=3, restore_best_weights=True)
+    model.fit(
+        X_corrections,
+        y_corrections_cat,
+        epochs=10,
+        batch_size=32,
+        callbacks=[early_stop],
+        verbose=0
+    )
 
-        best_trial_model = trial_model
-        return accuracy
+    # on dégèle toutes les couches pour les prochains fine-tunings
+    for layer in model.layers:
+        layer.trainable = True
 
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=1)
-    best_params = study.best_params
-    logger.info(f"[RETRAIN] Meilleurs paramètres Optuna : {best_params}")
-
-    # Conserve le modèle déjà entraîné pendant l'essai Optuna.
-    model = best_trial_model
-    accuracy_after = study.best_value
+    # score après fine-tuning
+    _, accuracy_after = model.evaluate(X_test, y_test_cat, verbose=0)
+    logger.info(f"[RETRAIN] Accuracy après : {accuracy_after:.4f}")
 
     # save new model
     model.save(MODEL_PATH)
-    logger.info(f"[RETRAIN] Accuracy après : {accuracy_after:.4f}")
     logger.info(f"[RETRAIN] Modèle sauvegardé dans {MODEL_PATH}")
 
     return {
         "accuracy_before": round(accuracy_before, 4),
         "accuracy_after": round(accuracy_after, 4),
-        "best_params": best_params,
         "corrections_used": len(corrections)
     }

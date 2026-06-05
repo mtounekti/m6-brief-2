@@ -31,28 +31,50 @@ def init_flow_state(db_path: str):
     conn.close()
 
 
-# Nettoie les corrections incohérentes ou corrompues.
 @task
 def clean_corrections(db_path: str) -> int:
     conn = sqlite3.connect(db_path, timeout=30)
     cursor = conn.cursor()
 
-    # Supprime les corrections sans image
+    # Récupère et archive les corrections sans image
+    cursor.execute("SELECT id, prediction, correction, timestamp FROM corrections WHERE image IS NULL")
+    for row in cursor.fetchall():
+        cursor.execute(
+            "INSERT INTO error_log (correction_id, prediction, correction, reason, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (row[0], row[1], row[2], "image_null", row[3])
+        )
     cursor.execute("DELETE FROM corrections WHERE image IS NULL")
     deleted_null = cursor.rowcount
 
-    # Supprime les doublons (même prediction, correction, timestamp)
+    # Récupère et archive les doublons
+    cursor.execute("""
+        SELECT id, prediction, correction, timestamp FROM corrections
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM corrections
+            GROUP BY prediction, correction, timestamp
+        )
+    """)
+    for row in cursor.fetchall():
+        cursor.execute(
+            "INSERT INTO error_log (correction_id, prediction, correction, reason, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (row[0], row[1], row[2], "duplicate", row[3])
+        )
     cursor.execute("""
         DELETE FROM corrections
         WHERE id NOT IN (
-            SELECT MIN(id)
-            FROM corrections
+            SELECT MIN(id) FROM corrections
             GROUP BY prediction, correction, timestamp
         )
     """)
     deleted_duplicates = cursor.rowcount
 
-    # Supprime les corrections incohérentes (prediction == correction)
+    # Récupère et archive les corrections incohérentes
+    cursor.execute("SELECT id, prediction, correction, timestamp FROM corrections WHERE prediction = correction")
+    for row in cursor.fetchall():
+        cursor.execute(
+            "INSERT INTO error_log (correction_id, prediction, correction, reason, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (row[0], row[1], row[2], "incoherent", row[3])
+        )
     cursor.execute("DELETE FROM corrections WHERE prediction = correction")
     deleted_incoherent = cursor.rowcount
 
